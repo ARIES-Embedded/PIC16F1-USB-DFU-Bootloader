@@ -1,0 +1,55 @@
+The i2c protocol is a (slightly) modified clone of the i2c-tiny-usb protocol and should be compatible with original the i2c-tiny-usb device.
+The only difference is the high bit in the wIndex field is set.
+
+Communication is done using the command pipe of the USB.
+A control byte is sent as the header byte, after that there is a data stage.
+
+8 Byte Packet	uint8_t			uint8_t		uint16_t	uint16_t	uint16_t
+USB-Packet:	bmRequestType		bRequest	wValue		wIndex		wLength
+I2C-Protocol:	requestType		command		flags		address		length
+
+requestType complies with the USB specs:
+	0x41 = vendor defined OUT request, recipient interface
+	0xC1 = vendor defined IN request, recipient interface
+
+command:
+	0 - CMD_ECHO - Sends back content of wValue/flags field. (2 bytes)
+	1 - CMD_GET_FUNC - Sends back functionality of firmware. (4 bytes)
+	2 - CMD_SET_DELAY - Not implemented, but originally sets delay. (0 byte response for ACK, used for driver to confirm communication with firmware)
+	3 - CMD_GET_STATUS - Sends back I2C status. (1 byte)
+	4 - CMD_I2C_IO - Starts IO operation, the 1 bit additionally indicates BEGIN (generate start condition) and the 2 bit indicates END (generate stop condition)
+
+flags:
+	If used with CMD_DELAY: flags = delay in ms
+	If used with CMD_IO:
+		I2C_M_RD: Sets read bit in address.
+		+ Other unused flags, see firmware for more.
+
+address:
+	The high bit 0x80 is always set so that the USB Stack can identify the package as i2c command.
+	If used with CMD_I2C_IO the low byte is the address without R/W bit.
+
+length:
+	If used with CMD_I2C_IO: length of write/read operation
+
+
+Status:
+	0 IDLE
+	1 Last write operation was followed by ACK
+	2 Last write operation was followed by NAK
+
+Example:
+
+	USB-Packet:	bmRequestType	bRequest	wValue		wIndex		wLength
+			0x41		0x07		0x0000		0x806F		0x0002
+		0x41: OUT Packet for vendor-defined interface
+		0x07 = 0x04 + 0x02 + 0x01: CMD_I2C_IO with BEGIN and END flag
+		0x0000: Write Operation (Read Flag not set)
+		0x806F: High bit for packet identification, i2c address is 6F
+		0x0002: Write 2 Bytes
+	This command expects 2 more byte in data stage and writes these to device with address 0x6F, Start and Stop conditions will be generated.
+
+	This LibUSB call would generate the packet above:
+		libusb_control_transfer(HANDLE, 0x41, 0x07, 0x0000, 0x806F, DATA, 0x0002, TIMEOUT);
+
+

@@ -1,0 +1,62 @@
+1 GENERAL
+	1.1 - To combine bootloader and firmware images use tools located in /mass-production/ (may need to be compiled first):
+			-- Compile firmware (make)
+			-- Add CRC (./ihex-add-crc firmware.hex firmware_crc.hex)
+			-- Merge with bootloader (./ihex-merge bootloader.hex firmware_crc.hex finalImage.hex)
+	1.2 - To flash firmware using serial numbers
+			-- With MPLABX IPE use finalImage.hex and *.num file
+			-- If a *.num file does not exist, it can be generated (./sqtp-numgen sn.num)
+	1.3 - To utilize DFU:
+			-- Compile firmware (make)
+			-- Use /tools/454hex2dfu to create dfu file. (./454hex2dfu firmware.hex firmware.dfu)
+			-- Use dfu-util to flash new firmware.
+
+2 SERIAL
+	2.1 - Generally the endpoint #3 can be used by any libusb application. (untested)
+	2.2 - The device will create a "/dev/ttyACM#" device where # is usually 0, which can be accessed to use the serial port of the MCU.
+	2.3 - Example:
+			"sudo picocom -b 115200 /dev/ttyACM0"
+				open serial device with 115200 baudrate
+	
+3 I2C
+	3.1 - Generally the protocol can be used by any libusb application.
+	3.2 - The i2c-aries-emb driver has to be installed (if module is compatible with kernel a "sudo insmod i2c-aries-emb.ko" will suffice).
+	3.3 - Then there will be a "/dev/i2c-#" device, which can be accessed with tools like "i2cdetect".
+	
+4 JTAG
+	4.1 - Generally the protocol can be used by any libusb application.
+	4.2 - OpenOCD has to be compiled with the modified USB-Blaster driver.
+	4.3 - The USB-Blaster then can no longer be used with this version of OpenOCD.
+	4.4 - Example:
+			"openocd -f ../path_to_file/mx10.cfg"
+				to start OpenOCD with PIC-JTAG and MAX 10 FPGA configuration
+			"telnet localhost 4444"
+				in a new terminal, to connect to OpenOCD
+			"svf /opt/blank_check.svf quiet progress"
+				run .svf file without printing commands but showing progress in 5% increments, svf file took around 13 minutes to complete.
+							
+5 DFU
+	5.1 - dfu-util can be used to send device to bootloader, to upload and download firmware
+	5.2 - The first try to perform DFU operations will result in a "device lost" error, but will switch device to bootloader.
+	5.3 - Any subsequent try (while the device is in bootloader) should succeed.
+	5.4 - Example:
+			"sudo dfu-util -d 04d8:edf0 -D firmware.dfu"
+				to switch to bootloader
+			"sudo dfu-util -D firmware.dfu"
+				to programm device
+	
+6 WINDOWS
+	6.0 GENERAL - As descibed in "info.txt" it is currently NOT possible to use any functionality of the MCU.
+			LibUSB unable to talk to composite devices & serial port is missing it's data interface (composite).
+	6.1 GENERAL - Most interfaces will not have a driver assigned, though it is possible to manually install WinUSB/LibUSB compatible driver for them. (see "Zadig" - USB driver install tool)
+	6.2 SERIAL - Generally a functional COM driver exists, but the port is apparently missing it's data interface because the USB Device uses the composite class and is therefore unusable.
+	6.3 I2C - No i2c driver exists for windows, though by installing libusbK driver for the device and then using LibUSB it is possible to write a program to perform i2c operations.
+	6.4 JTAG - If a LibUSB compatible driver is installed for JTAG interface LibUSB is able to communicate with device and OpenOCD should theoretically work.
+	6.5 DFU - dfu-utils requires libusbK driver for main device and LibUSB compatible driver for bootloader. Then dfu-utils works as normal.
+	INFO:
+		- Since the MCU uses the composite device class (defined at interface level), all interfaces are "independent devices" themselves.
+			LibUSB however shares Linux idea where any usb device is exactly one device with multiple interfaces (which can have their own driver).
+			So it is unclear which interfaces require which driver to use LibUSB with composite devices on Windows.
+		- WinUSB cannot correctly issue "usb-reset". Therefore libusbK driver is required. It is uncertain which device (interface) exactly needs this driver, but it is likely to be I2C (interface 0).
+		- When sending control messages, where the bmRequestType RECIPIENT_VENDOR flag is set, WinUSB will set the low-byte of wIndex to the assigned interface, which seems to be always 0.
+			This makes LibUSB unable to send control messages to any other interface than 0 and breaks I2C commands.

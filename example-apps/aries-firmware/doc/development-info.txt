@@ -1,0 +1,74 @@
+This file contains information about developent process.
+
+	0.0 - This list may be incomplete.
+
+1 GENERAL
+	1.1 - The bootloader was modified to make use of serial numbers (HIDE_SERIAL_NUMBER 0, Line 68).
+	1.2 - The firmware compiled using the Makefile is configured for usage with bootloader (program offset, crc memory space, no configuration words)	
+	1.3 - There are few DebugSerial messages left in the code (can be disabled or "removed").
+	1.4 - It would be a smart idea to set up .gitignore for compilation files.
+	1.5 - Sometimes MPLABX IPE fails to correctly flash a serial number (shows up as "00000001", bootloader default).
+			Repeating the process of flashing new firmware usually works and provides a correct number (like "R204E8..")
+	1.6 PIN LAYOUT:
+			I2C + BitbangJTAG (default):
+						RA4  TDI
+						RA5  TDO
+						RC2  TMS
+						RC3  TCK
+						RC0  SCL (I2C)
+						RC1  SDA (I2C)
+			MSSP-JTAG + BitbangI2C (mssp-jtag):
+						RC0  TCK / SCK
+						RC1  TDO / SDI
+						RC2  TDI / SDO
+						RC3  TMS / SS
+						RA4 (or RA5)  SCL (I2C)
+						RA5 (or RA4)  SDA (I2C)
+
+2 SERIAL / COM
+	2.1 In "config.h" there is a macro to enable / disable serial debug messages. If those are switched on, any usual serial functionality is disabled.
+	
+3 I2C / TINYUSB-DRIVER
+	3.1 - I2C seems to have some instability issues (could just be problem with prototype)
+	3.2 - Modfied i2c-tiny-usb driver should be compatible with the original i2c-tiny-usb device (high bit in index-field of usb packets is set to identify said packet for i2c)
+			However it is uncertain if the modified version is ready for usage (There might be fragments left which make it incompatible with the originial)
+
+4 FTDI / JTAG / OPENOCD
+	4.1 - Communication works like this:
+			OpenOCD <---> libftdi <---> libusb <---native usb impl---usb---> PIC <---jtag---> FPGA
+	4.2 - libftdi is theoretically not required, as it is just a wrapper for libusb. With a bit of work OpenOCD could just use libusb.
+	4.3 - FTDI setup packets are answered (0 byte response) but not handled, OpenOCD hasnt yet used any of FTDI chip specific commmands (through libftdi)
+	4.4 - OpenOCD modified blaster driver is incompatible with the original (inverted bit order) and has reduced buffersize (from 4096 down to 64 bytes)
+			both drivers can not be used at the same time (required recompilation of OpenOCD)
+	4.5 - The device has 80 bytes buffer (1 whole bank)
+	4.6 - The device can receive commands for writing up to 32 bytes (bitbang) or 63 (byteshift) in 1 USB packet
+	4.7 - When sending back to PC the device has to send 2 dummy bytes for libftdi (unused status) and therefore will send only 62 data bytes.
+	4.8 - Under /misc/ there are 2 config files for PIC and FPGA - these should be located under either under $HOME/.openocd/ or somewhere in openocd directory.
+
+5 DFU / DFU-UTILS
+	5.1 - DFU mode can be reached by sending a DFU_DETACH request and a USB reset within the timelimit.
+			dfu-utils will do this, however there is a "device lost after reset"-error and any DFU operation will not be performed.
+			Any subsequent tries (where the device is already in bootloader) can successfully update firmware.
+		
+		
+6 WINDOWS
+	6.1 - Since the MCU uses the composite device class (defined at interface level) all interfaces are handled as their own devices.
+	6.2 - This is an issue with LibUSB since LibUSB shares Linux idea where there is only one device.
+			Since each interface has their own driver, LibUSB cannot talk to the device in general.
+			It is yet unclear how LibUSB can talk to composite devices.
+			It is howeveer possible to use a LibUSB compatible driver for the entire composite device.
+			Then all interfaces can be used through libusb, but there will be no serial device.
+	6.3 - The Data interface of the CDC class will not be assigned a driver when using composite class.
+			The Interrupt interface then will be unusable. (Unknown if any functionality is compromised)
+			It is possible to install a CDC driver for the data interface and have a functional serial port.
+			
+	These previous issues remain, however LibUSB is not able to talk to any interfaces (6.1, 6.2)
+			6.2.1 DFU - For DFU operations a LibUSB compatible driver has to be installed for the bootloader.
+			6.2.2 DFU - To switch device to bootloader a libusb driver is required, as WinUSB can not perform proper USB resets.
+			6.2.3 I2C - No driver for windows exists, but the i2c-tiny-usb protocol can be used with a custom libusb program if a LibUSB compatible driver is installed.
+			6.2.4 JTAG - WinUSB has to be installed for jtag interface - the rest depends on OpenOCD as communication through libftdi is working.
+
+	LibUSB compatible driver means for example: WinUSB, libusbK, libusb-win32
+	libusb driver means: libusbK, libusb-win32
+	libusbK seems to be a (newer) windows only project to provide a LibUSB compatible API.
+	libusb-win32 is a windows port of LibUSB-0.1

@@ -65,7 +65,7 @@
 ; USB does not require serial numbers; their operational advantage is when resolving multiple devices plugged into the same computer
 ; if multiple devices with the same serial number are inserted at the same time to a computer, problems may result
 ; so, the operationally safe solution for this bootloader is to enable "HIDE_SERIAL_NUMBER" to prevent possible conflicts
-HIDE_SERIAL_NUMBER	equ	1
+HIDE_SERIAL_NUMBER	equ	0
 
 ;;; Configuration
 	__config _CONFIG1, _FOSC_INTOSC & _WDTE_SWDTEN & _PWRTE_ON & _MCLRE_OFF & _CP_ON & _BOREN_ON & _IESO_OFF & _FCMEN_OFF
