@@ -45,21 +45,12 @@ int8_t process_dfu_setup_request(struct setup_packet* setup) {
     if (setup->REQUEST.bmRequestType == 0b00100001 && setup->bRequest == DFU_DETACH) {
         DFUState = 1; // state is now appDetach
         usb_send_data_stage(0, 0, 0, 0);
-        
-        DFUWaitForReset = true;
-        DFUTimer0Timeout = setup->wValue; //TODO: is this value correct?
-        
-        DFUTimer0PostScale = 0;
-        
-        //Enable Timer0 with 12 MHz (instruction clock) / 256 (prescale)
-        TMR0CS = 0;
-        PSA = 1;
-        PS0 = 1;
-        PS1 = 1;
-        PS2 = 1;
-        TMR0IE = 0;
-        TMR0 = 0;
-        return 0;
+		UCONbits.PKTDIS = 0;
+		// Delay for USB IN request to be sent.
+		__delay_ms(15);
+        // Trigger watchdog
+		WDTCON = 1;
+		while (1);
     }
 
     if (setup->REQUEST.bmRequestType == 0b10100001 && setup->bRequest == DFU_GETSTATE) {
@@ -72,7 +63,7 @@ int8_t process_dfu_setup_request(struct setup_packet* setup) {
         DFUStatus.bState = DFUState;
         DFUStatus.bStatus = 0;
         DFUStatus.PollTimeout_Byte1 = 0;
-        DFUStatus.PollTimeout_Byte2 = 0x4; //TODO: ? -> 4 * 256 = 1024 ms
+        DFUStatus.PollTimeout_Byte2 = 0;
         DFUStatus.PollTimeout_Byte3 = 0;
         DFUStatus.iString = -1; //Unsupported
 

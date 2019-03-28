@@ -26,6 +26,7 @@
 #include "jtag.h"
 
 uint8_t JTAGBuffer[80] @ 0x2140; //data is saved only in bank 4
+bool JTAGActive;
 
 //static Variables used in assembler code - located in shared bank
 static uint8_t OutLength @ 0x70;
@@ -55,18 +56,20 @@ static uint8_t staticVar4 @ 0x73;
 #define IN 1
 
 void JTAGInit() {
-    TRIS_TMS = OUT;
-    TRIS_TCK = OUT;
-    TRIS_TDI = OUT; //TDI is output for pic
+	// All pins are initially tri-stated until OpenOCD starts communication.
+    TRIS_TMS = IN;
+    TRIS_TCK = IN;
+    TRIS_TDI = IN; //TDI is output for pic
     TRIS_TDO = IN; //TDO is input for pic
     JTAGBufferIndex = 0;
+	JTAGActive = false;
 }
 
 int8_t ProcessJTAGSetup(struct setup_packet* setup) {
 
     DebugSerial("FTDI Setup", true);
-    //Currently: Acknowledge every type of request but send empty data
-    //TODO: find out whether there a requests that have to be supported properly
+    // Currently: Acknowledge every type of request but send empty data
+    // OpenOCD does not require any setup packets
     if (setup->REQUEST.bmRequestType == 0xC0) {
         usb_send_data_stage(0, 0, 0, 0);
     } else {
@@ -97,36 +100,37 @@ void JTAGAsm() {
             //Check zero flag, if it is set return
             BTFSC STATUS, 2
             GOTO _JtagAsm_Return
-            //Check bit 0 of data (bitbang or shift mode)
-            BTFSC INDF0, 0
+            //Check bit 7 of data (bitbang or shift mode)
+            BTFSC INDF0, 7
             GOTO _JtagAsmShiftMode
             _JtagAsmBitbang :
-            //Check bit 1 of data (read TDO)
-            BTFSS INDF0, 1
+            //Check bit 6 of data (read TDO)
+            BTFSS INDF0, 6
             GOTO _JtagAsmBitbang_SkipTDO
             //Read TDO in svar3 (temp)
             CLRF 0x72
             BTFSC PORTA, 5
-            BSF 0x72, 7
-            BSF 0x72, 6
+            BSF 0x72, 0
+			// The blaster would read a pin that does not exist on PIC
+            BSF 0x72, 1
             _JtagAsmBitbang_SkipTDO :
             //Set TMS accordingly
-            BTFSS INDF0, 6
+            BTFSS INDF0, 1
             BCF PORTC, 2
-            BTFSC INDF0, 6
+            BTFSC INDF0, 1
             BSF PORTC, 2
             //Set TDI
-            BTFSS INDF0, 3
+            BTFSS INDF0, 4
             BCF PORTA, 4
-            BTFSC INDF0, 3
+            BTFSC INDF0, 4
             BSF PORTA, 4
             //Set TCK
-            BTFSS INDF0, 7
+            BTFSS INDF0, 0
             BCF PORTC, 3
-            BTFSC INDF0, 7
+            BTFSC INDF0, 0
             BSF PORTC, 3
-            //Byte is done, check if read TDO
-            BTFSS INDF0, 1
+            //Byte is done, check if read TDO and eventually overwrite buffer
+            BTFSS INDF0, 6
             GOTO _JtagAsm_Bitbang_SkipWriteTDO
             //Write value to where FSR1 points to (ReadBuffer)
             MOVF 0x72, W
@@ -141,40 +145,28 @@ void JTAGAsm() {
 
             _JtagAsmShiftMode :
 
-            //Get byte length from command that has inverted bit sequence            
-            CLRW
-            BTFSC INDF0, 7
-            BSF WREG, 0
-            BTFSC INDF0, 6
-            BSF WREG, 1
-            BTFSC INDF0, 5
-            BSF WREG, 2
-            BTFSC INDF0, 4
-            BSF WREG, 3
-            BTFSC INDF0, 3
-            BSF WREG, 4
-            BTFSC INDF0, 2
-            BSF WREG, 5
+            //Get byte length from command (byte & 0x3F)
+			MOVF INDF0, W
+			ANDLW 0x3F			
             MOVWF 0x72
             //0x72 contains length of data shift operation
-            MOVF 0x72, F //probably useless instruction?
             //byte shift handles length+1 bytes of command buffer
             DECF 0x70, F
             SUBWF 0x70, F
             MOVF INDF0, W
             INCF FSR0L, F
             //Test if TDO has to be read
-            BTFSC WREG, 1
-            GOTO _JtagAsmShiftMode_TDO //TDO and !TDO code are similar however this duplicated code is way faster, at the cost of increased code size, since there is only 1 if check now
+            BTFSC WREG, 6
+            GOTO _JtagAsmShiftMode_TDO // read TDO and dont read TDO code are similar however this duplicated code is way faster, at the cost of increased code size, since there is only 1 if check now
 
             _JtagAsmShiftMode_NotTDO :
             BTFSC STATUS, 2 //check if loop is finished
             GOTO _JtagAsmShiftMode_Return
 
             //Shift first bit from left and generate clock pulse
-            BTFSC INDF0, 7
+            BTFSC INDF0, 0
             BSF PORTA, 4
-            BTFSS INDF0, 7
+            BTFSS INDF0, 0
             BCF PORTA, 4
             NOP
             BSF PORTC, 3
@@ -183,61 +175,6 @@ void JTAGAsm() {
             NOP
 
             //Shift 2nd bit from left and generate clock pulse
-            BTFSC INDF0, 6
-            BSF PORTA, 4
-            BTFSS INDF0, 6
-            BCF PORTA, 4
-            NOP
-            BSF PORTC, 3
-            NOP
-            BCF PORTC, 3
-            NOP
-
-            //Shift 3rd bit from left and generate clock pulse
-            BTFSC INDF0, 5
-            BSF PORTA, 4
-            BTFSS INDF0, 5
-            BCF PORTA, 4
-            NOP
-            BSF PORTC, 3
-            NOP
-            BCF PORTC, 3
-            NOP
-
-            //Shift 4th bit from left and generate clock pulse
-            BTFSC INDF0, 4
-            BSF PORTA, 4
-            BTFSS INDF0, 4
-            BCF PORTA, 4
-            NOP
-            BSF PORTC, 3
-            NOP
-            BCF PORTC, 3
-            NOP
-
-            //Shift 5th bit from left and generate clock pulse
-            BTFSC INDF0, 3
-            BSF PORTA, 4
-            BTFSS INDF0, 3
-            BCF PORTA, 4
-            NOP
-            BSF PORTC, 3
-            NOP
-            BCF PORTC, 3
-            NOP
-
-            //Shift 6th bit from left and generate clock pulse
-            BTFSC INDF0, 2
-            BSF PORTA, 4
-            BTFSS INDF0, 2
-            BCF PORTA, 4
-            NOP
-            BSF PORTC, 3
-            NOP
-            BCF PORTC, 3
-            NOP
-
-            //Shift 7th bit from left and generate clock pulse
             BTFSC INDF0, 1
             BSF PORTA, 4
             BTFSS INDF0, 1
@@ -248,10 +185,65 @@ void JTAGAsm() {
             BCF PORTC, 3
             NOP
 
-            //Shift last bit from left and generate clock pulse
-            BTFSC INDF0, 0
+            //Shift 3rd bit from left and generate clock pulse
+            BTFSC INDF0, 2
             BSF PORTA, 4
-            BTFSS INDF0, 0
+            BTFSS INDF0, 2
+            BCF PORTA, 4
+            NOP
+            BSF PORTC, 3
+            NOP
+            BCF PORTC, 3
+            NOP
+
+            //Shift 4th bit from left and generate clock pulse
+            BTFSC INDF0, 3
+            BSF PORTA, 4
+            BTFSS INDF0, 3
+            BCF PORTA, 4
+            NOP
+            BSF PORTC, 3
+            NOP
+            BCF PORTC, 3
+            NOP
+
+            //Shift 5th bit from left and generate clock pulse
+            BTFSC INDF0, 4
+            BSF PORTA, 4
+            BTFSS INDF0, 4
+            BCF PORTA, 4
+            NOP
+            BSF PORTC, 3
+            NOP
+            BCF PORTC, 3
+            NOP
+
+            //Shift 6th bit from left and generate clock pulse
+            BTFSC INDF0, 5
+            BSF PORTA, 4
+            BTFSS INDF0, 5
+            BCF PORTA, 4
+            NOP
+            BSF PORTC, 3
+            NOP
+            BCF PORTC, 3
+            NOP
+
+            //Shift 7th bit from left and generate clock pulse
+            BTFSC INDF0, 6
+            BSF PORTA, 4
+            BTFSS INDF0, 6
+            BCF PORTA, 4
+            NOP
+            BSF PORTC, 3
+            NOP
+            BCF PORTC, 3
+            NOP
+
+            //Shift last bit from left and generate clock pulse
+            BTFSC INDF0, 7
+            BSF PORTA, 4
+            BTFSS INDF0, 7
             BCF PORTA, 4
             NOP
             BSF PORTC, 3
@@ -268,17 +260,17 @@ void JTAGAsm() {
             BTFSC STATUS, 2 //Zero bit
             GOTO _JtagAsmShiftMode_Return
 
-            //Clear WREG as TDO values will be read there
+            //Clear WREG to read TDO (Pin A5) into
             CLRW
 
-            //Shift 1st bit from left, read TDO (Pin RA5) and generate clock pulse
-            BTFSC INDF0, 7
+            //Shift least significant bit, read TDO (Pin RA5) and generate clock pulse
+            BTFSC INDF0, 0
             BSF PORTA, 4
-            BTFSS INDF0, 7
+            BTFSS INDF0, 0
             BCF PORTA, 4
             NOP
             BTFSC PORTA, 5
-            BSF WREG, 7
+            BSF WREG, 0
             NOP
             BSF PORTC, 3
             NOP
@@ -286,76 +278,6 @@ void JTAGAsm() {
             NOP
 
             //Shift 2st bit from left, read TDO (Pin RA5) and generate clock pulse
-            BTFSC INDF0, 6
-            BSF PORTA, 4
-            BTFSS INDF0, 6
-            BCF PORTA, 4
-            NOP
-            BTFSC PORTA, 5
-            BSF WREG, 6
-            NOP
-            BSF PORTC, 3
-            NOP
-            BCF PORTC, 3
-            NOP
-
-            //Shift 3rd bit from left, read TDO (Pin RA5) and generate clock pulse
-            BTFSC INDF0, 5
-            BSF PORTA, 4
-            BTFSS INDF0, 5
-            BCF PORTA, 4
-            NOP
-            BTFSC PORTA, 5
-            BSF WREG, 5
-            NOP
-            BSF PORTC, 3
-            NOP
-            BCF PORTC, 3
-            NOP
-
-            //Shift 4th bit from left, read TDO (Pin RA5) and generate clock pulse
-            BTFSC INDF0, 4
-            BSF PORTA, 4
-            BTFSS INDF0, 4
-            BCF PORTA, 4
-            NOP
-            BTFSC PORTA, 5
-            BSF WREG, 4
-            NOP
-            BSF PORTC, 3
-            NOP
-            BCF PORTC, 3
-            NOP
-
-            //Shift 5th bit from left, read TDO (Pin RA5) and generate clock pulse
-            BTFSC INDF0, 3
-            BSF PORTA, 4
-            BTFSS INDF0, 3
-            BCF PORTA, 4
-            NOP
-            BTFSC PORTA, 5
-            BSF WREG, 3
-            NOP
-            BSF PORTC, 3
-            NOP
-            BCF PORTC, 3
-            NOP
-
-            //Shift 6th bit from left, read TDO (Pin RA5) and generate clock pulse
-            BTFSC INDF0, 2
-            BSF PORTA, 4
-            BTFSS INDF0, 2
-            BCF PORTA, 4
-            NOP
-            BTFSC PORTA, 5
-            BSF WREG, 2
-            NOP
-            BSF PORTC, 3
-            NOP
-            BCF PORTC, 3
-            NOP
-
-            //Shift 7th bit from left, read TDO (Pin RA5) and generate clock pulse
             BTFSC INDF0, 1
             BSF PORTA, 4
             BTFSS INDF0, 1
@@ -369,14 +291,84 @@ void JTAGAsm() {
             BCF PORTC, 3
             NOP
 
-            //Shift 8th bit from left, read TDO (Pin RA5) and generate clock pulse
-            BTFSC INDF0, 0
+            //Shift 3rd bit from left, read TDO (Pin RA5) and generate clock pulse
+            BTFSC INDF0, 2
             BSF PORTA, 4
-            BTFSS INDF0, 0
+            BTFSS INDF0, 2
             BCF PORTA, 4
             NOP
             BTFSC PORTA, 5
-            BSF WREG, 0
+            BSF WREG, 2
+            NOP
+            BSF PORTC, 3
+            NOP
+            BCF PORTC, 3
+            NOP
+
+            //Shift 4th bit from left, read TDO (Pin RA5) and generate clock pulse
+            BTFSC INDF0, 3
+            BSF PORTA, 4
+            BTFSS INDF0, 3
+            BCF PORTA, 4
+            NOP
+            BTFSC PORTA, 5
+            BSF WREG, 3
+            NOP
+            BSF PORTC, 3
+            NOP
+            BCF PORTC, 3
+            NOP
+
+            //Shift 5th bit from left, read TDO (Pin RA5) and generate clock pulse
+            BTFSC INDF0, 4
+            BSF PORTA, 4
+            BTFSS INDF0, 4
+            BCF PORTA, 4
+            NOP
+            BTFSC PORTA, 5
+            BSF WREG, 4
+            NOP
+            BSF PORTC, 3
+            NOP
+            BCF PORTC, 3
+            NOP
+
+            //Shift 6th bit from left, read TDO (Pin RA5) and generate clock pulse
+            BTFSC INDF0, 5
+            BSF PORTA, 4
+            BTFSS INDF0, 5
+            BCF PORTA, 4
+            NOP
+            BTFSC PORTA, 5
+            BSF WREG, 5
+            NOP
+            BSF PORTC, 3
+            NOP
+            BCF PORTC, 3
+            NOP
+
+            //Shift 7th bit from left, read TDO (Pin RA5) and generate clock pulse
+            BTFSC INDF0, 6
+            BSF PORTA, 4
+            BTFSS INDF0, 6
+            BCF PORTA, 4
+            NOP
+            BTFSC PORTA, 5
+            BSF WREG, 6
+            NOP
+            BSF PORTC, 3
+            NOP
+            BCF PORTC, 3
+            NOP
+
+            //Shift 8th bit from left, read TDO (Pin RA5) and generate clock pulse
+            BTFSC INDF0, 7
+            BSF PORTA, 4
+            BTFSS INDF0, 7
+            BCF PORTA, 4
+            NOP
+            BTFSC PORTA, 5
+            BSF WREG, 7
             NOP
             BSF PORTC, 3
             NOP
@@ -430,6 +422,15 @@ _BeginHandleFTDI:
 
     if ((JTAGBufferIndex < 10) && usb_out_endpoint_has_data(2)) {
 
+		// Pins are tri-stated until OpenOCD starts communication.
+		if (!JTAGActive) {
+			TRIS_TMS = OUT;
+			TRIS_TCK = OUT;
+			TRIS_TDI = OUT; //TDI is output for pic
+			TRIS_TDO = IN; //TDO is input for pic
+			JTAGActive = true;
+		}
+		
         OutLength = usb_get_out_buffer(2, &out);
         //Copy data to JTAGBuffer so the USB Buffer can be rearmed
         memcpy(JTAGBuffer + JTAGBufferIndex, out, OutLength);

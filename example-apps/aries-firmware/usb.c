@@ -1160,6 +1160,9 @@ static inline void handle_ep0_setup()
 
 	ep0_data_stage_direc = setup->REQUEST.direction;
 	int8_t res;
+	
+	DebugSerial("! ", false);
+	DebugSerialBytes(setup, sizeof(struct setup_packet), true);
 
 #ifdef NEEDS_CLEAR_STALL
 	/* The datasheets say the MCU will clear BSTALL and UOWN when

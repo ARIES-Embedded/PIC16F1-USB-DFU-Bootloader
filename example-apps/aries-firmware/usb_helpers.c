@@ -101,11 +101,7 @@ void app_start_of_frame_callback(void) {
 }
 
 void app_usb_reset_callback(void) {
-    //A reset was issued while in appDETACH state -> switch to bootloader by triggering watchdog
-    if (DFUWaitForReset) {
-        WDTCON = 1;
-        while (1);
-    }
+
 }
 
 /* CDC Callbacks. See usb_cdc.h for documentation. */

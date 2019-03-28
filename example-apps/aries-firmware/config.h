@@ -37,7 +37,7 @@
  * Use #define DEBUGSERIAL -1   to remove debug statements from code
  *                              if the compiler does not optimize them away.
  */
-#define DEBUGSERIAL -1  
+#define DEBUGSERIAL -1
 #define _XTAL_FREQ 48000000
 
 #endif	/* CONFIG_H */

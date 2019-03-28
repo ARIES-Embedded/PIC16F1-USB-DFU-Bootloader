@@ -272,8 +272,8 @@ static const ROMPTR struct configuration_1_packet configuration_1 = {
     {
         sizeof (dfu_descriptor),
         DESC_DFUFUNCTION,
-        0b00000011, //Attributes - no detach, no manifestation, can upload, can download
-        1000, // 1s for receiving a usb reset to switch to bootloader
+        0b00001111, //Attributes - will detach, can manifest, can upload, can download
+        0000, // there is no wait time, device will go to bootloader directly after receiving dfu_detach request
         64, //packetsize (of DFU Bootloader)
         0x100, //bcdDFUVersion
     }

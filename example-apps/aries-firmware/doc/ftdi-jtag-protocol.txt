@@ -1,8 +1,6 @@
 Communication between PC (OpenOCD) and device is done using libftdi, which internally uses libusb.
 
-This protocol is an exact copy of the Altera USB Blaster protocol although all bits are in reversed order (due to bit order of SPI module).
-Furthermore the PIC only has 80 Bytes buffer whereas the Blaster provides 4096.
-Due to this the Blaster and the PIC are incompatible.
+This protocol is a copy of the Altera USB Blaster protocol, however it is not compatible with Altera tools.
 
 There are 2 modes for JTAG operations: Bitbanging & Byte-Shift
 
@@ -15,26 +13,26 @@ Writing operations are started by sending bytes to (vendor-defined) endpoint 0x0
 
 Byte:  	MSb		7 		6		5		4		3		2		1		0	LSb
 2^n:			128		64		32		16		8		4		2		1
-Bitbang:		TCK		TMS		x		x		TDI		OUT/x		READ		MODE	
-Byte-Shift:		1		2		4		8		16		32		READ		MODE	
+Bitbang:		MODE    READ    OUT/x   TDI     x       x       TMS     TCK
+Byte-Shift:		MODE    READ    32      16      8       4       2       1
 "x" means value is ignored.
 
 Bitbang:	
-	7:	Value for TCK
-	6:	Value for TMS
-	5:	Unused in firmware
-	4:	Unused in firmware
-	3:	Value for TDI
-	2:	Enable output - but unused in firmware
-	1:	1 = Read TDO and write to buffer, 0 = ignore TDO -- 1 Byte per bit, where 0xC0 means TDO = 1 and 0x40 means TDO = 0
-	0:	0 (for Bitbang mode) or 1 (for Byte-Shift mode)
+	0:	Value for TCK
+	1:	Value for TMS
+	2:	Unused in firmware
+	3:	Unused in firmware
+	4:	Value for TDI
+	5:	Enable output / LED - but unused in firmware
+	6:	1 = Read TDO and write to buffer, 0 = ignore TDO -- 1 Byte per bit: 0x02 if TDO = 0; 0x03 if TDO = 1, since bit 2 is always set.
+	7:	0 (for Bitbang mode) or 1 (for Byte-Shift mode)
 
 Byte-Shift:
 	Byte-Shift mode uses a header byte and up to 63 immediately following data bytes.
 	Bytes are (in future) shifted out using the MSSP module which is MSb first while JTAG is LSb first - therefore all bits in this protocol have been reversed.
-		7-2:	Length of Byte-Shift operation in reversed order; #7 is the 1 bit, #6 is the 2 bit ... #2 is the 32 bit -- all following bytes are data bytes.
-		1:	1 = Read TDO and write to buffer, 0 = ignore TDO -- Bytes are in reversed bit order.
-		0:	1 (for Byte-Shift mode) or 0 (for Bitbang mode)
+		0-5:	Length of Byte-Shift - all following bytes are data bytes.
+		6:	1 = Read TDO and write to buffer, 0 = ignore TDO
+		7:	1 (for Byte-Shift mode) or 0 (for Bitbang mode)
 
 The bitbang mode is usually used for driving TMS signals and to write TDI/TDO data if length is not a multiple of 8.
 For larger data transfers the byteshift mode is used.
@@ -42,20 +40,20 @@ After the buffer was written it should be read as the firmware won't accept new 
 
 Examples:
 
-	5 Bytes: 0x74 0xF4 0x74 0xF4 0x74
-		0x74 = bitbang mode with only TMS high
-		0xF4 = bitbang mode with TMS & TCK high
+	5 Bytes: 0x2e 0x2f 0x2e 0x2f 0x2e
+		0x2e = bitbang mode with only TMS high (x values are high)
+		0x2f = bitbang mode with TMS & TCK high (x values are high)
 	Example above generates 2 clock pulses while TMS is high
 
-	8 Bytes: 0xE3 0xF0 0x00 0x00 0x00 0x00 0x00 0x00
-		0xE3 = byte shift mode, read TDO, length = 7 bytes
+	8 Bytes: 0xC7 0x0F 0x00 0x00 0x00 0x00 0x00 0x00
+		0xC7 = byte shift mode, read TDO, length = 7 bytes
 		Remaining 7 bytes are data
 	The first 4 bits are 1111, the remaining 52 are all zero.
 
-	4 Bytes: 0x34 0x81 0x00 0x34
-		0x34 = all outputs to zero
+	4 Bytes: 0x2C 0x81 0x00 0x34
+		0x2C = all outputs to zero (x values are high)
 		0x81 = byte shift mode, do not read TDO, length = 1 byte
 		0x00 = data byte
-		0x34 = all outputs to zero
+		0x2C = all outputs to zero (x values are high)
 	Bitbang and Byte-Shift mode can be mixed together		
 	

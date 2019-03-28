@@ -1,19 +1,16 @@
-Firmware for PIC16F1454 (5, 9) on MX10 and Spider SoM
+Firmware for PIC16F1454 on MX10 and Spider SoM
 =====================================================
-
-forked from [majbthrd/PIC16F1-USB-DFU-Bootloader](https://github.com/majbthrd/PIC16F1-USB-DFU-Bootloader)
 
 As base for development /example-apps/minimalCDC was used.
 
-The firmware enables access to the bootloader, to serial, i2c and jtag interfaces.
-I2C protocol and driver derived from: [i2c-tiny-usb](https://github.com/harbaum/I2C-Tiny-USB)
-JTAG protocol derived from: [USB-Blaster](https://github.com/ntfreak/openocd/blob/master/src/jtag/drivers/usb_blaster/usb_blaster.c)
+The firmware enables access to the bootloader, to serial, i2c and jtag interfaces.  
+I2C protocol and driver derived from: [i2c-tiny-usb](https://github.com/harbaum/I2C-Tiny-USB)  
+JTAG protocol derived from: [USB-Blaster](https://github.com/ntfreak/openocd/blob/master/src/jtag/drivers/usb_blaster/usb_blaster.c)  
 
 # Bootloader
 A bootloader exists to update the firmware using tools such as dfu-util.
 ```
 dfu-util -d 04d8:efd0 -D firmware.dfu
-dfu-util -D firmware.dfu
 ```
 Bootloader sources are under /firmware/
 To update the bootloader itself an ICSP device (PICkit or similiar) is required as the bootloader region is write protected.
@@ -57,9 +54,9 @@ dt	'P', 0x00
 dt	'L', 0x00
 ```
 # Firmware
-Firmware is located under /example-apps/aries-firmware
-To make use of the I2C interface the i2c-aries-emb driver (soonTM) (derived from [i2c-tiny-usb](https://github.com/harbaum/I2C-Tiny-USB)) is required.
-The JTAG interface is used with OpenOCD (requires modified USB-Blaster driver (soonTM) )
+Firmware is located under /example-apps/aries-firmware  
+To make use of the I2C interface the i2c-aries-emb driver (derived from [i2c-tiny-usb](https://github.com/harbaum/I2C-Tiny-USB)) is required.  
+The JTAG interface is used with OpenOCD >=0.10
 Compiled hex files are located under /example-apps/aries-firmware/hex-images/
 
 # From PIC16F1-USB-DFU-Bootloader

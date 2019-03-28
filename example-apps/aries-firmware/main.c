@@ -71,8 +71,6 @@
 #include "uart.h"
 #include "jtag.h"
 
-void HandleDFU();
-
 int main(void) {
 
 #ifdef NO_BOOTLOADER
@@ -110,7 +108,6 @@ int main(void) {
         /* if USB isn't configured, there is no point in proceeding further */
         if (!usb_is_configured()) continue;
 
-        HandleDFU();
 #if DEBUGSERIAL != 1
         HandleUART();
 #endif
@@ -119,28 +116,7 @@ int main(void) {
     }
 }
 
-void HandleDFU() {
-
-    // When Timer0 overflows (~21,3us) its interrupt flag is set.
-    // If the device has received a DFU_DETACH request and is waiting for reset the PostScale will be incremented
-    // When PostScale reaches DFUTimeout (for a 1 seconds timeout this var is 46875) the device will switch from
-    // appDetach state to appIdle and will no longer wait for a USB reset
-
-    if (TMR0IF && DFUWaitForReset) {
-        TMR0IF = 0;
-        DFUTimer0PostScale++;
-    }
-
-    if (DFUTimer0PostScale >= DFUTimer0Timeout) {
-        DFUTimer0PostScale = 0;
-        DFUState = 0;
-        DFUWaitForReset = false;
-    }
-
-}
-
-
-//Interrupt routines are unused - it is unclear what has to be changed for them
+//Interrupt routines are unused
 
 void interrupt isr() {
 #ifdef USB_USE_INTERRUPTS
